@@ -97,11 +97,35 @@ export async function processStudioImage(
   const bgG = sumG / count;
   const bgB = sumB / count;
 
+  // Measure perimeter color variance to check background consistency
+  let variance = 0;
+  for (const pt of samplePoints) {
+    const idx = (pt.y * w + pt.x) * 4;
+    const diff = Math.sqrt(
+      (data[idx] - bgR) ** 2 +
+      (data[idx + 1] - bgG) ** 2 +
+      (data[idx + 2] - bgB) ** 2
+    );
+    variance += diff;
+  }
+  const avgBgVariance = variance / count;
+
+  // Measure contrast between central craft region and perimeter
+  const centerIdx = (Math.floor(h / 2) * w + Math.floor(w / 2)) * 4;
+  const centerContrast = Math.sqrt(
+    (data[centerIdx] - bgR) ** 2 * 0.3 +
+    (data[centerIdx + 1] - bgG) ** 2 * 0.59 +
+    (data[centerIdx + 2] - bgB) ** 2 * 0.11
+  );
+
+  // If segmentation confidence is poor (low contrast or noisy background),
+  // protect the artisan craft pixels from aggressive removal
+  const isLowConfidence = centerContrast < 22 || avgBgVariance > 55;
+
   // Create foreground alpha mask
   // Crafts have distinct textures and colors compared to perimeter backdrop
   const alphaMask = new Uint8ClampedArray(w * h);
-  const tolerance = 42;
-  const feather = Math.max(1, options.edgeSoftness * 4);
+  const tolerance = isLowConfidence ? 28 : 42;
 
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
@@ -129,9 +153,11 @@ export async function processStudioImage(
         alpha = 255;
       }
 
-      // Strong preservation in the central focus area
-      if (distFromCenterNorm < 0.6) {
-        alpha = Math.max(alpha, 240);
+      // Strong preservation in the central focus area.
+      // If confidence is low, widen preservation area up to 85% of frame
+      const preserveThreshold = isLowConfidence ? 0.85 : 0.65;
+      if (distFromCenterNorm < preserveThreshold) {
+        alpha = Math.max(alpha, isLowConfidence ? 255 : 240);
       }
 
       alphaMask[y * w + x] = alpha;

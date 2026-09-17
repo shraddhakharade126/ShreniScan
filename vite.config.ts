@@ -3,45 +3,23 @@ import react from '@vitejs/plugin-react';
 import path from 'path';
 import { defineConfig, type Plugin } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
-import { analyzeCraftWithGemini } from './src/server/gemini';
+import analyzeCraftHandler from './api/gemini/analyze-craft';
+import healthHandler from './api/health';
 
-function geminiApiPlugin(): Plugin {
+// Development-only server middleware: delegates requests to the standalone Vercel serverless function.
+// Using apply: 'serve' ensures there is zero production dependency on configureServer().
+function vercelDevServerPlugin(): Plugin {
   return {
-    name: 'gemini-api-plugin',
+    name: 'vercel-dev-server-plugin',
+    apply: 'serve',
     configureServer(server) {
       server.middlewares.use(async (req, res, next) => {
-        if (req.url === '/api/gemini/analyze-craft' && req.method === 'POST') {
-          try {
-            let body = '';
-            req.on('data', (chunk) => {
-              body += chunk;
-            });
-            req.on('end', async () => {
-              try {
-                const parsed = JSON.parse(body || '{}');
-                const result = await analyzeCraftWithGemini(parsed);
-                res.setHeader('Content-Type', 'application/json');
-                res.statusCode = 200;
-                res.end(JSON.stringify(result));
-              } catch (err: unknown) {
-                console.error('Gemini analysis error:', err);
-                const errorMessage = err instanceof Error ? err.message : 'Analysis failed';
-                res.setHeader('Content-Type', 'application/json');
-                res.statusCode = 500;
-                res.end(JSON.stringify({ error: errorMessage }));
-              }
-            });
-          } catch (err) {
-            next(err);
-          }
-          return;
+        if (req.url === '/api/gemini/analyze-craft') {
+          return analyzeCraftHandler(req, res);
         }
 
         if (req.url === '/api/health') {
-          res.setHeader('Content-Type', 'application/json');
-          res.statusCode = 200;
-          res.end(JSON.stringify({ status: 'ok', pwa: true, gemini: Boolean(process.env.GEMINI_API_KEY) }));
-          return;
+          return healthHandler(req, res);
         }
 
         next();
@@ -55,7 +33,7 @@ export default defineConfig(() => {
     plugins: [
       react(),
       tailwindcss(),
-      geminiApiPlugin(),
+      vercelDevServerPlugin(),
       VitePWA({
         registerType: 'autoUpdate',
         includeAssets: [

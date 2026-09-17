@@ -24,6 +24,10 @@ import {
   ChevronRight,
   Info,
   SlidersHorizontal,
+  SwitchCamera,
+  X,
+  Plus,
+  Palette,
 } from "lucide-react";
 import confetti from "canvas-confetti";
 import { toast } from "sonner";
@@ -102,9 +106,15 @@ function AddProduct() {
   // Wizard state
   const [draftId, setDraftId] = useState<string>(() => "draft_" + Date.now());
   const [step, setStep] = useState(0);
-  const [rawImage, setRawImage] = useState<string>(images.vase);
+  const [rawImage, setRawImage] = useState<string>("");
   const [studioImage, setStudioImage] = useState<string>("");
   const [isProcessingStudio, setIsProcessingStudio] = useState(false);
+
+  // Live Camera state
+  const [isLiveCameraOpen, setIsLiveCameraOpen] = useState(false);
+  const [cameraFacing, setCameraFacing] = useState<"environment" | "user">("environment");
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
 
   // Studio adjustment options
   const [studioOptions, setStudioOptions] = useState<StudioOptions>({
@@ -131,12 +141,23 @@ function AddProduct() {
 
   // Editable fields populated by Gemini
   const [productTitle, setProductTitle] = useState("");
+  const [craftCategory, setCraftCategory] = useState("Pottery & Ceramics");
+  const [craftType, setCraftType] = useState("Terracotta & Heritage Handicraft");
   const [productDesc, setProductDesc] = useState("");
   const [productMaterials, setProductMaterials] = useState<string[]>([]);
+  const [productColors, setProductColors] = useState<string[]>([]);
   const [productTags, setProductTags] = useState<string[]>([]);
+  const [confidenceScore, setConfidenceScore] = useState(96);
+  const [priceMin, setPriceMin] = useState(1200);
+  const [priceMax, setPriceMax] = useState(1800);
   const [price, setPrice] = useState(1499);
   const [editingPrice, setEditingPrice] = useState(false);
   const [published, setPublished] = useState(false);
+
+  // Quick addition fields
+  const [newMaterialInput, setNewMaterialInput] = useState("");
+  const [newColorInput, setNewColorInput] = useState("");
+  const [newTagInput, setNewTagInput] = useState("");
 
   // Drafts drawer
   const [showDraftsDrawer, setShowDraftsDrawer] = useState(false);
@@ -146,6 +167,16 @@ function AddProduct() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const cameraInputRef = useRef<HTMLInputElement | null>(null);
   const recognitionRef = useRef<any>(null);
+
+  // Cleanup camera stream on unmount
+  useEffect(() => {
+    return () => {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((t) => t.stop());
+        streamRef.current = null;
+      }
+    };
+  }, []);
 
   // Load existing draft or restore list on mount
   useEffect(() => {
@@ -160,10 +191,16 @@ function AddProduct() {
       if (current.voiceNotes) setVoiceText(current.voiceNotes);
       if (current.analysis) {
         setAnalysis(current.analysis);
-        setProductTitle(current.analysis.title);
+        setProductTitle(current.analysis.productTitle || current.analysis.title);
+        setCraftCategory(current.analysis.craftCategory || current.analysis.category || "Pottery & Ceramics");
+        setCraftType(current.analysis.craftType || "Handmade Artisan Craft");
         setProductDesc(current.analysis.description);
-        setProductMaterials(current.analysis.materials);
-        setProductTags(current.analysis.tags);
+        setProductMaterials(current.analysis.materials || []);
+        setProductColors(current.analysis.colors || ["Terracotta Rust", "Earthy Ochre"]);
+        setProductTags(current.analysis.tags || []);
+        setConfidenceScore(current.analysis.confidence || current.analysis.shreniScan?.confidenceScore || 96);
+        setPriceMin(current.analysis.priceMin || 1200);
+        setPriceMax(current.analysis.priceMax || 1800);
         if (current.analysis.suggestedPrice) setPrice(current.analysis.suggestedPrice);
       }
       if (current.finalPrice) setPrice(current.finalPrice);
@@ -238,12 +275,116 @@ function AddProduct() {
     reader.readAsDataURL(file);
   };
 
-  // Handle Sample selection
-  const handleSelectSample = (sample: (typeof SAMPLE_CRAFTS)[0]) => {
-    setRawImage(sample.img);
+  // Live Camera Handlers
+  const startLiveCamera = async (facing: "environment" | "user" = cameraFacing) => {
+    setIsLiveCameraOpen(true);
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+    }
+
+    try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error("Live camera stream is not supported in this browser environment.");
+      }
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: { ideal: facing },
+          width: { ideal: 1920 },
+          height: { ideal: 1080 },
+        },
+        audio: false,
+      });
+
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        videoRef.current.play().catch((e) => console.warn("Video play error:", e));
+      }
+    } catch (err: unknown) {
+      console.warn("Camera streaming fallback to native capture:", err);
+      toast.info("Using device native camera capture");
+      setIsLiveCameraOpen(false);
+      cameraInputRef.current?.click();
+    }
+  };
+
+  const stopLiveCamera = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+    }
+    setIsLiveCameraOpen(false);
+  };
+
+  const toggleCameraFacing = () => {
+    const nextFacing = cameraFacing === "environment" ? "user" : "environment";
+    setCameraFacing(nextFacing);
+    startLiveCamera(nextFacing);
+  };
+
+  const captureLivePhoto = () => {
+    if (!videoRef.current) return;
+    const video = videoRef.current;
+    if (!video.videoWidth || !video.videoHeight) return;
+
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    if (cameraFacing === "user") {
+      ctx.translate(canvas.width, 0);
+      ctx.scale(-1, 1);
+    }
+
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const dataUrl = canvas.toDataURL("image/jpeg", 0.94);
+
+    stopLiveCamera();
+    setRawImage(dataUrl);
     setStudioImage("");
     setStep(1);
-    toast.success(`Loaded sample: ${sample.name}`);
+    toast.success("Craft photo captured!");
+  };
+
+  // Helper chips addition/removal
+  const handleAddMaterial = () => {
+    const val = newMaterialInput.trim();
+    if (val && !productMaterials.includes(val)) {
+      setProductMaterials((prev) => [...prev, val]);
+      setNewMaterialInput("");
+    }
+  };
+
+  const handleRemoveMaterial = (item: string) => {
+    setProductMaterials((prev) => prev.filter((m) => m !== item));
+  };
+
+  const handleAddColor = () => {
+    const val = newColorInput.trim();
+    if (val && !productColors.includes(val)) {
+      setProductColors((prev) => [...prev, val]);
+      setNewColorInput("");
+    }
+  };
+
+  const handleRemoveColor = (item: string) => {
+    setProductColors((prev) => prev.filter((c) => c !== item));
+  };
+
+  const handleAddTag = () => {
+    const val = newTagInput.trim().replace(/^#/, "");
+    if (val && !productTags.includes(val)) {
+      setProductTags((prev) => [...prev, val]);
+      setNewTagInput("");
+    }
+  };
+
+  const handleRemoveTag = (item: string) => {
+    setProductTags((prev) => prev.filter((t) => t !== item));
   };
 
   // Voice recognition handling
@@ -330,10 +471,16 @@ function AddProduct() {
 
       const data: CraftAnalysisResponse = await res.json();
       setAnalysis(data);
-      setProductTitle(data.title || "Handcrafted Heritage Art");
+      setProductTitle(data.productTitle || data.title || "Handcrafted Heritage Art");
+      setCraftCategory(data.craftCategory || data.category || "Pottery & Ceramics");
+      setCraftType(data.craftType || "Traditional Indian Handicraft");
       setProductDesc(data.description || "");
       setProductMaterials(data.materials || []);
+      setProductColors(data.colors || ["Terracotta Rust", "Ochre", "Earthy Brown"]);
       setProductTags(data.tags || []);
+      setConfidenceScore(data.confidence || data.shreniScan?.confidenceScore || 96);
+      setPriceMin(data.priceMin || 1200);
+      setPriceMax(data.priceMax || 1800);
       if (data.suggestedPrice) {
         setPrice(data.suggestedPrice);
       }
@@ -342,17 +489,21 @@ function AddProduct() {
       console.warn("Gemini request error, providing intelligent cultural fallback:", err);
       // Fallback with rich authentic data
       const fallbackData: CraftAnalysisResponse = {
-        title: "Jaipur Blue Pottery Hand-Glazed Floral Vase",
-        category: "Pottery & Ceramics",
+        productTitle: "Jaipur Blue Pottery Hand-Glazed Floral Vase",
+        craftCategory: "Pottery & Ceramics",
         craftType: "Jaipur Blue Pottery (GI Tagged)",
         materials: ["Quartz Powder", "Natural Cobalt Pigments", "Fuller's Earth", "Glass Frit"],
+        colors: ["Cobalt Blue", "Turquoise", "Cream White"],
         description:
           "Hand-thrown and exquisitely glazed in the royal pink city tradition of Jaipur. Crafted without clay using a centuries-old dough of quartz stone powder, powdered glass, and gum, then fired once at low heat. Adorned with hand-painted Persian floral motifs in vibrant cobalt and turquoise vegetable dye tones.",
-        story: "Crafted by master artisans in Sanganer, Rajasthan upholding GI registration heritage.",
         tags: ["blue pottery", "jaipur craft", "gi tagged", "hand glazed", "indian decor", "sustainable"],
         priceMin: 1250,
         priceMax: 1850,
+        confidence: 97,
+        title: "Jaipur Blue Pottery Hand-Glazed Floral Vase",
+        category: "Pottery & Ceramics",
         suggestedPrice: 1499,
+        story: "Crafted by master artisans in Sanganer, Rajasthan upholding GI registration heritage.",
         careInstructions: "Wipe with a soft dry cloth. Avoid submerging in water or harsh soaps.",
         craftDimensionsEstimate: "Height 10.5 in · Diameter 5.2 in · Weight 820 g",
         shreniScan: {
@@ -364,10 +515,16 @@ function AddProduct() {
       };
 
       setAnalysis(fallbackData);
-      setProductTitle(fallbackData.title);
+      setProductTitle(fallbackData.productTitle);
+      setCraftCategory(fallbackData.craftCategory);
+      setCraftType(fallbackData.craftType);
       setProductDesc(fallbackData.description);
       setProductMaterials(fallbackData.materials);
+      setProductColors(fallbackData.colors);
       setProductTags(fallbackData.tags);
+      setConfidenceScore(fallbackData.confidence);
+      setPriceMin(fallbackData.priceMin);
+      setPriceMax(fallbackData.priceMax);
       setPrice(fallbackData.suggestedPrice);
       toast.success("Craft analysis completed!");
     } finally {
@@ -377,30 +534,44 @@ function AddProduct() {
 
   // Publish to Bazaar
   const handlePublish = async () => {
-    const finalProduct: Product = {
-      id: "prod_" + Date.now(),
-      name: productTitle || "Authentic Handcrafted Piece",
-      price: price,
-      rating: 5.0,
-      stock: 5,
-      status: "Published",
-      image: studioImage || rawImage || images.vase,
-      craft: analysis?.craftType || "Handmade Artisan Craft",
-    };
+    try {
+      const finalProduct: Product = {
+        id: "prod_" + Date.now(),
+        name: productTitle || "Authentic Handcrafted Piece",
+        price: price,
+        rating: 5.0,
+        stock: 5,
+        status: "Published",
+        image: studioImage || rawImage || images.vase,
+        rawImage: rawImage,
+        studioImage: studioImage || undefined,
+        craft: craftType || "Handmade Artisan Craft",
+        materials: productMaterials,
+        colors: productColors,
+        description: productDesc,
+        tags: productTags,
+        confidence: confidenceScore,
+        syncStatus: typeof navigator !== "undefined" && navigator.onLine ? "synced" : "pending_sync",
+      };
 
-    await publishProductToCatalog(finalProduct);
-    await deleteDraft(draftId);
-    clearCurrentWizardDraft();
+      await publishProductToCatalog(finalProduct);
+      await deleteDraft(draftId);
+      clearCurrentWizardDraft();
 
-    confetti({
-      particleCount: 110,
-      spread: 75,
-      origin: { y: 0.6 },
-      colors: ["#b45309", "#d97706", "#f59e0b", "#9a3412", "#10b981"],
-    });
+      confetti({
+        particleCount: 110,
+        spread: 75,
+        origin: { y: 0.6 },
+        colors: ["#b45309", "#d97706", "#f59e0b", "#9a3412", "#10b981"],
+      });
 
-    setPublished(true);
-    toast.success("Craft published live to KalaKart Bazaar!");
+      setPublished(true);
+      toast.success("Craft published live to KalaKart Bazaar!");
+    } catch (err: unknown) {
+      console.error("Publishing error:", err);
+      const errMsg = err instanceof Error ? err.message : "Failed to publish craft to catalog";
+      toast.error(errMsg);
+    }
   };
 
   const handleResumeDraft = (d: ProductDraft) => {
@@ -562,11 +733,11 @@ function AddProduct() {
             <div>
               <h2 className="text-xl font-bold">Capture Your Craft</h2>
               <p className="mt-1 text-xs text-muted-foreground">
-                Take a photo or choose an existing craft image. Shreni AI will handle lighting & background.
+                Take a photo using your device camera or select an existing photo from your gallery.
               </p>
             </div>
 
-            {/* Hidden file inputs */}
+            {/* Hidden native file inputs for OS camera & gallery fallback */}
             <input
               ref={cameraInputRef}
               type="file"
@@ -583,73 +754,143 @@ function AddProduct() {
               onChange={handleFileChange}
             />
 
-            <div className="grid gap-3">
-              <button
-                type="button"
-                onClick={() => cameraInputRef.current?.click()}
-                className="tap flex items-center gap-4 rounded-3xl bg-card p-4 text-left shadow-soft border border-border/60 hover:border-primary/40"
-              >
-                <span className="grid size-12 place-items-center rounded-2xl bg-gradient-warm text-white shadow-soft">
-                  <Camera className="size-6" />
-                </span>
-                <div>
-                  <span className="block text-sm font-bold">Take Live Photo</span>
-                  <span className="block text-xs text-muted-foreground">
-                    Open your mobile camera
-                  </span>
-                </div>
-              </button>
+            {/* Live Camera Viewfinder Overlay */}
+            {isLiveCameraOpen ? (
+              <div className="relative aspect-square w-full overflow-hidden rounded-3xl bg-black shadow-card">
+                <video
+                  ref={videoRef}
+                  autoPlay
+                  playsInline
+                  muted
+                  className={cn(
+                    "h-full w-full object-cover",
+                    cameraFacing === "user" && "-scale-x-100"
+                  )}
+                />
 
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                className="tap flex items-center gap-4 rounded-3xl bg-card p-4 text-left shadow-soft border border-border/60 hover:border-primary/40"
-              >
-                <span className="grid size-12 place-items-center rounded-2xl bg-amber-100 text-[#b45309]">
-                  <ImageIcon className="size-6" />
-                </span>
-                <div>
-                  <span className="block text-sm font-bold">Upload from Gallery</span>
-                  <span className="block text-xs text-muted-foreground">
-                    Select photo from device storage
-                  </span>
+                {/* Framing Alignment Guides */}
+                <div className="pointer-events-none absolute inset-0 grid grid-cols-3 grid-rows-3 border border-white/20">
+                  <div className="border-r border-b border-white/20" />
+                  <div className="border-r border-b border-white/20" />
+                  <div className="border-b border-white/20" />
+                  <div className="border-r border-b border-white/20" />
+                  <div className="border-r border-b border-white/20 flex items-center justify-center">
+                    <div className="size-20 rounded-full border border-dashed border-amber-400/70 animate-pulse" />
+                  </div>
+                  <div className="border-b border-white/20" />
+                  <div className="border-r border-white/20" />
+                  <div className="border-r border-white/20" />
+                  <div />
                 </div>
-              </button>
-            </div>
 
-            {/* Quick Sample Crafts selector */}
-            <div className="pt-2">
-              <div className="flex items-center justify-between pb-2">
-                <span className="text-xs font-bold text-muted-foreground">
-                  OR QUICK-SELECT A CRAFT SAMPLE:
-                </span>
-              </div>
-              <div className="grid grid-cols-3 gap-2">
-                {SAMPLE_CRAFTS.map((sample) => (
+                {/* Viewfinder Top Control Bar */}
+                <div className="absolute top-3 inset-x-3 flex items-center justify-between z-20">
                   <button
-                    key={sample.name}
                     type="button"
-                    onClick={() => handleSelectSample(sample)}
-                    className="tap group relative overflow-hidden rounded-2xl border border-border/60 bg-card p-1 text-left shadow-soft transition-all hover:border-primary"
+                    onClick={toggleCameraFacing}
+                    className="tap flex items-center gap-1.5 rounded-full bg-black/60 px-3 py-1.5 text-white backdrop-blur-md hover:bg-black/80"
                   >
-                    <img
-                      src={sample.img}
-                      alt={sample.name}
-                      className="aspect-square w-full rounded-xl object-cover transition-transform group-hover:scale-105"
-                    />
-                    <p className="mt-1 truncate text-[10px] font-bold text-foreground">
-                      {sample.name}
-                    </p>
-                    <p className="truncate text-[9px] text-muted-foreground">
-                      {sample.type}
-                    </p>
+                    <SwitchCamera className="size-4 text-amber-300" />
+                    <span className="text-[10px] font-bold">
+                      {cameraFacing === "environment" ? "Rear Camera" : "Front Camera"}
+                    </span>
                   </button>
-                ))}
+
+                  <button
+                    type="button"
+                    onClick={stopLiveCamera}
+                    className="tap rounded-full bg-black/60 p-2 text-white backdrop-blur-md hover:bg-black/80"
+                    title="Close Camera"
+                  >
+                    <X className="size-4" />
+                  </button>
+                </div>
+
+                {/* Viewfinder Bottom Shutter Bar */}
+                <div className="absolute bottom-4 inset-x-0 flex flex-col items-center justify-center gap-2 z-20">
+                  <button
+                    type="button"
+                    onClick={captureLivePhoto}
+                    className="tap grid size-16 place-items-center rounded-full border-4 border-white bg-gradient-warm text-white shadow-card transition-transform active:scale-95"
+                    title="Capture Craft"
+                  >
+                    <Camera className="size-7" />
+                  </button>
+                  <span className="rounded-full bg-black/60 px-2.5 py-0.5 text-[10px] font-medium text-white/90 backdrop-blur">
+                    Center craft within alignment ring
+                  </span>
+                </div>
               </div>
-            </div>
+            ) : (
+              <div className="grid gap-3">
+                <button
+                  type="button"
+                  onClick={() => startLiveCamera("environment")}
+                  className="tap flex items-center gap-4 rounded-3xl bg-card p-4 text-left shadow-soft border border-border/60 hover:border-primary/40 transition-all"
+                >
+                  <span className="grid size-12 place-items-center rounded-2xl bg-gradient-warm text-white shadow-soft">
+                    <Camera className="size-6" />
+                  </span>
+                  <div>
+                    <span className="block text-sm font-bold">Take Live Photo</span>
+                    <span className="block text-xs text-muted-foreground">
+                      Use real rear device camera with alignment guides
+                    </span>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="tap flex items-center gap-4 rounded-3xl bg-card p-4 text-left shadow-soft border border-border/60 hover:border-primary/40 transition-all"
+                >
+                  <span className="grid size-12 place-items-center rounded-2xl bg-amber-100 text-[#b45309]">
+                    <ImageIcon className="size-6" />
+                  </span>
+                  <div>
+                    <span className="block text-sm font-bold">Upload from Gallery</span>
+                    <span className="block text-xs text-muted-foreground">
+                      Select photo from your phone or computer storage
+                    </span>
+                  </div>
+                </button>
+
+                {/* Drag and Drop Zone */}
+                <div
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    const file = e.dataTransfer.files?.[0];
+                    if (file) {
+                      const reader = new FileReader();
+                      reader.onload = (event) => {
+                        const base64 = event.target?.result as string;
+                        if (base64) {
+                          setRawImage(base64);
+                          setStudioImage("");
+                          setStep(1);
+                          toast.success("Craft photo uploaded successfully!");
+                        }
+                      };
+                      reader.readAsDataURL(file);
+                    }
+                  }}
+                  onClick={() => fileInputRef.current?.click()}
+                  className="cursor-pointer rounded-3xl border-2 border-dashed border-border/80 bg-card/40 p-6 text-center hover:border-primary/50 transition-colors"
+                >
+                  <ImageIcon className="mx-auto size-8 text-muted-foreground/60 mb-2" />
+                  <p className="text-xs font-semibold text-foreground">
+                    Or drop your craft image here
+                  </p>
+                  <p className="text-[10px] text-muted-foreground mt-0.5">
+                    Supports high-resolution JPG, PNG, and WebP
+                  </p>
+                </div>
+              </div>
+            )}
 
             <div className="rounded-2xl border border-amber-200 bg-amber-50/70 p-3 text-xs leading-relaxed text-amber-900">
-              💡 <strong>Artisan Tip:</strong> Place your item in natural window light. KalaKart Studio will remove distracting room backgrounds automatically.
+              💡 <strong>Artisan Tip:</strong> Place your craft in natural window light. KalaKart Studio isolates authentic craft edges and creates clean catalog backgrounds automatically.
             </div>
           </section>
         )}
@@ -657,42 +898,62 @@ function AddProduct() {
         {/* ================= STEP 1: STUDIO & BACKGROUND REMOVAL ================= */}
         {step === 1 && (
           <section className="rise space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-xl font-bold">AI Product Studio</h2>
-                <p className="mt-0.5 text-xs text-muted-foreground">
-                  Non-destructive background isolation & lighting enhancement.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowAdjustments((v) => !v)}
-                className={cn(
-                  "tap flex items-center gap-1 rounded-xl px-2.5 py-1.5 text-xs font-bold transition-all",
-                  showAdjustments
-                    ? "bg-[#b45309] text-white"
-                    : "bg-card text-foreground shadow-soft border border-border"
-                )}
-              >
-                <SlidersHorizontal className="size-3.5" />
-                <span>Fine-Tune</span>
-              </button>
-            </div>
-
-            {/* Studio Canvas Preview Box with Before / After slider */}
-            <div className="relative aspect-square w-full overflow-hidden rounded-3xl border border-border bg-card shadow-card">
-              {isProcessingStudio && (
-                <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-black/40 text-white backdrop-blur-xs">
-                  <Wand2 className="size-8 animate-spin text-amber-300" />
-                  <p className="mt-2 text-xs font-bold">Segmenting Craft Pixels…</p>
+            {!rawImage ? (
+              <div className="rounded-3xl border border-dashed border-border bg-card p-8 text-center space-y-3 shadow-soft">
+                <div className="mx-auto grid size-14 place-items-center rounded-2xl bg-amber-100 text-[#b45309]">
+                  <Camera className="size-7" />
                 </div>
-              )}
+                <h3 className="text-base font-bold text-foreground">No Craft Photo Loaded</h3>
+                <p className="text-xs text-muted-foreground max-w-xs mx-auto">
+                  Please capture a live photo of your handmade craft or upload one from your device gallery.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setStep(0)}
+                  className="tap inline-flex items-center gap-2 rounded-2xl bg-gradient-warm px-5 py-2.5 text-xs font-bold text-white shadow-soft"
+                >
+                  <Camera className="size-4" />
+                  <span>Go to Camera Step</span>
+                </button>
+              </div>
+            ) : (
+              <>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h2 className="text-xl font-bold">AI Product Studio</h2>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      Non-destructive background isolation & lighting enhancement.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowAdjustments((v) => !v)}
+                    className={cn(
+                      "tap flex items-center gap-1 rounded-xl px-2.5 py-1.5 text-xs font-bold transition-all",
+                      showAdjustments
+                        ? "bg-[#b45309] text-white"
+                        : "bg-card text-foreground shadow-soft border border-border"
+                    )}
+                  >
+                    <SlidersHorizontal className="size-3.5" />
+                    <span>Fine-Tune</span>
+                  </button>
+                </div>
 
-              <img
-                src={studioImage || rawImage}
-                alt="Studio product preview"
-                className="size-full object-contain p-2 transition-all"
-              />
+                {/* Studio Canvas Preview Box with Before / After slider */}
+                <div className="relative aspect-square w-full overflow-hidden rounded-3xl border border-border bg-card shadow-card">
+                  {isProcessingStudio && (
+                    <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-black/40 text-white backdrop-blur-xs">
+                      <Wand2 className="size-8 animate-spin text-amber-300" />
+                      <p className="mt-2 text-xs font-bold">Segmenting Craft Pixels…</p>
+                    </div>
+                  )}
+
+                  <img
+                    src={studioImage || rawImage}
+                    alt="Studio product preview"
+                    className="size-full object-contain p-2 transition-all"
+                  />
 
               {/* Before/After compare toggle badge */}
               <div className="absolute top-3 left-3 flex items-center gap-1.5">
@@ -932,8 +1193,10 @@ function AddProduct() {
                 <ArrowRight className="size-4" />
               </button>
             </div>
-          </section>
+          </>
         )}
+      </section>
+    )}
 
         {/* ================= STEP 2: DESCRIBE & SHRENI GEMINI AI ================= */}
         {step === 2 && (
@@ -1076,16 +1339,21 @@ function AddProduct() {
             {/* Populated Gemini Analysis Results */}
             {analysis && !isAnalyzing && (
               <div className="space-y-3 rounded-3xl border border-border bg-card p-4 shadow-soft">
-                {/* Authenticity Badge */}
-                <div className="flex items-center justify-between rounded-2xl bg-amber-100/70 p-2.5">
-                  <div className="flex items-center gap-1.5">
-                    <ShieldCheck className="size-4 text-emerald-600" />
-                    <span className="text-xs font-bold text-[#78350f]">
-                      {analysis.shreniScan.culturalRegion} ({analysis.shreniScan.confidenceScore}% Authenticity)
-                    </span>
+                {/* Authenticity Badge with Confidence Score */}
+                <div className="flex items-center justify-between rounded-2xl bg-amber-100/80 p-3 border border-amber-300/60">
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck className="size-5 text-emerald-600 shrink-0" />
+                    <div>
+                      <span className="block text-xs font-bold text-[#78350f]">
+                        {analysis.shreniScan?.culturalRegion || "Authentic Regional Heritage"}
+                      </span>
+                      <span className="block text-[10px] font-semibold text-emerald-700">
+                        {confidenceScore}% Shreni Authenticity Confidence
+                      </span>
+                    </div>
                   </div>
-                  {analysis.shreniScan.giTagEligible && (
-                    <span className="rounded-full bg-emerald-600 px-2 py-0.5 text-[9px] font-bold text-white">
+                  {analysis.shreniScan?.giTagEligible && (
+                    <span className="rounded-full bg-emerald-600 px-2.5 py-1 text-[9px] font-bold text-white shadow-xs">
                       GI Tagged
                     </span>
                   )}
@@ -1100,28 +1368,127 @@ function AddProduct() {
                     type="text"
                     value={productTitle}
                     onChange={(e) => setProductTitle(e.target.value)}
+                    placeholder="E.g. Handcrafted Terracotta Floral Vase"
                     className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2 text-xs font-bold text-foreground outline-none focus:border-primary"
                   />
                 </div>
 
-                {/* Craft Materials */}
-                {productMaterials.length > 0 && (
+                {/* Craft Category & Craft Type */}
+                <div className="grid grid-cols-2 gap-2">
                   <div>
                     <label className="text-[10px] font-bold text-muted-foreground uppercase">
-                      Authentic Materials
+                      Craft Category
                     </label>
-                    <div className="mt-1 flex flex-wrap gap-1.5">
-                      {productMaterials.map((mat) => (
-                        <span
-                          key={mat}
-                          className="rounded-full bg-accent/60 px-2.5 py-0.5 text-[10px] font-semibold text-accent-foreground"
-                        >
-                          {mat}
-                        </span>
-                      ))}
-                    </div>
+                    <input
+                      type="text"
+                      value={craftCategory}
+                      onChange={(e) => setCraftCategory(e.target.value)}
+                      placeholder="Category"
+                      className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2 text-xs font-semibold text-foreground outline-none focus:border-primary"
+                    />
                   </div>
-                )}
+                  <div>
+                    <label className="text-[10px] font-bold text-muted-foreground uppercase">
+                      Craft Style / Tradition
+                    </label>
+                    <input
+                      type="text"
+                      value={craftType}
+                      onChange={(e) => setCraftType(e.target.value)}
+                      placeholder="Craft style"
+                      className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2 text-xs font-semibold text-foreground outline-none focus:border-primary"
+                    />
+                  </div>
+                </div>
+
+                {/* Craft Materials (Editable Chips + Add Input) */}
+                <div>
+                  <div className="flex items-center justify-between">
+                    <label className="text-[10px] font-bold text-muted-foreground uppercase">
+                      Natural Materials ({productMaterials.length})
+                    </label>
+                  </div>
+                  <div className="mt-1.5 flex flex-wrap gap-1.5">
+                    {productMaterials.map((mat) => (
+                      <span
+                        key={mat}
+                        className="inline-flex items-center gap-1 rounded-full bg-accent/80 pl-2.5 pr-1.5 py-0.5 text-[11px] font-semibold text-accent-foreground border border-border/50"
+                      >
+                        <span>{mat}</span>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveMaterial(mat)}
+                          className="rounded-full p-0.5 hover:bg-black/10 text-muted-foreground"
+                          title="Remove material"
+                        >
+                          <X className="size-3" />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                  <div className="mt-2 flex gap-2">
+                    <input
+                      type="text"
+                      value={newMaterialInput}
+                      onChange={(e) => setNewMaterialInput(e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), handleAddMaterial())}
+                      placeholder="Add material (e.g. Clay, Brass, Cotton)..."
+                      className="flex-1 rounded-xl border border-border bg-background px-3 py-1.5 text-xs outline-none focus:border-primary"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAddMaterial}
+                      className="tap rounded-xl bg-amber-100 px-3 py-1.5 text-xs font-bold text-[#b45309] hover:bg-amber-200"
+                    >
+                      <Plus className="size-3.5 inline mr-0.5" />
+                      Add
+                    </button>
+                  </div>
+                </div>
+
+                {/* Craft Colors (Editable Chips + Add Input) */}
+                <div>
+                  <label className="text-[10px] font-bold text-muted-foreground uppercase flex items-center gap-1">
+                    <Palette className="size-3 text-[#b45309]" />
+                    <span>Colors & Pigments ({productColors.length})</span>
+                  </label>
+                  <div className="mt-1.5 flex flex-wrap gap-1.5">
+                    {productColors.map((col) => (
+                      <span
+                        key={col}
+                        className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-0.5 text-[11px] font-semibold text-amber-900 border border-amber-200"
+                      >
+                        <span>{col}</span>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveColor(col)}
+                          className="rounded-full p-0.5 hover:bg-black/10 text-amber-800"
+                          title="Remove color"
+                        >
+                          <X className="size-3" />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                  <div className="mt-2 flex gap-2">
+                    <input
+                      type="text"
+                      value={newColorInput}
+                      onChange={(e) => setNewColorInput(e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), handleAddColor())}
+                      placeholder="Add color (e.g. Indigo Blue, Terracotta)..."
+                      className="flex-1 rounded-xl border border-border bg-background px-3 py-1.5 text-xs outline-none focus:border-primary"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAddColor}
+                      className="tap rounded-xl bg-amber-100 px-3 py-1.5 text-xs font-bold text-[#b45309] hover:bg-amber-200"
+                    >
+                      <Plus className="size-3.5 inline mr-0.5" />
+                      Add
+                    </button>
+                  </div>
+                </div>
 
                 {/* Editable Story Description */}
                 <div>
@@ -1136,20 +1503,49 @@ function AddProduct() {
                   />
                 </div>
 
-                {/* SEO Tags */}
-                {productTags.length > 0 && (
-                  <div className="flex flex-wrap items-center gap-1 pt-1">
-                    <Tag className="size-3 text-muted-foreground" />
+                {/* SEO & Marketplace Tags (Editable Chips + Add Input) */}
+                <div>
+                  <label className="text-[10px] font-bold text-muted-foreground uppercase flex items-center gap-1">
+                    <Tag className="size-3" />
+                    <span>Marketplace Tags ({productTags.length})</span>
+                  </label>
+                  <div className="mt-1.5 flex flex-wrap gap-1.5">
                     {productTags.map((tag) => (
                       <span
                         key={tag}
-                        className="rounded-md bg-muted px-2 py-0.5 text-[10px] text-muted-foreground"
+                        className="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground border border-border/40"
                       >
-                        #{tag}
+                        <span>#{tag}</span>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveTag(tag)}
+                          className="rounded-full p-0.5 hover:bg-black/10"
+                          title="Remove tag"
+                        >
+                          <X className="size-2.5" />
+                        </button>
                       </span>
                     ))}
                   </div>
-                )}
+                  <div className="mt-2 flex gap-2">
+                    <input
+                      type="text"
+                      value={newTagInput}
+                      onChange={(e) => setNewTagInput(e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), handleAddTag())}
+                      placeholder="Add tag (e.g. handmade, organic)..."
+                      className="flex-1 rounded-xl border border-border bg-background px-3 py-1.5 text-xs outline-none focus:border-primary"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAddTag}
+                      className="tap rounded-xl bg-muted px-3 py-1.5 text-xs font-bold text-foreground hover:bg-accent"
+                    >
+                      <Plus className="size-3.5 inline mr-0.5" />
+                      Add
+                    </button>
+                  </div>
+                </div>
 
                 <button
                   type="button"
