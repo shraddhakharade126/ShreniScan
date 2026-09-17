@@ -15,6 +15,7 @@ export interface StudioOptions {
   shadow: boolean;
   shadowIntensity: number; // 0 to 100
   splitRatio?: number; // 0 to 1 for Before/After split view
+  originalImage?: string; // Original image with background for Before/After comparison
 }
 
 export const BACKDROP_COLORS: Record<BackdropType, string> = {
@@ -74,93 +75,103 @@ export async function processStudioImage(
   const imgData = ctx.getImageData(0, 0, w, h);
   const data = imgData.data;
 
-  // Sample perimeter corner pixels to estimate background color profile
-  const samplePoints = [
-    { x: 4, y: 4 },
-    { x: w - 5, y: 4 },
-    { x: 4, y: h - 5 },
-    { x: w - 5, y: h - 5 },
-    { x: Math.floor(w / 2), y: 4 },
-    { x: 4, y: Math.floor(h / 2) },
-    { x: w - 5, y: Math.floor(h / 2) },
-  ];
-
-  let sumR = 0, sumG = 0, sumB = 0, count = 0;
-  for (const pt of samplePoints) {
-    const idx = (pt.y * w + pt.x) * 4;
-    sumR += data[idx];
-    sumG += data[idx + 1];
-    sumB += data[idx + 2];
-    count++;
+  // Check if image already has transparent alpha channels (e.g. from dedicated background removal API)
+  let transparentPixelCount = 0;
+  for (let i = 3; i < data.length; i += 4) {
+    if (data[i] < 240) {
+      transparentPixelCount++;
+    }
   }
-  const bgR = sumR / count;
-  const bgG = sumG / count;
-  const bgB = sumB / count;
+  const isDedicatedTransparent = transparentPixelCount > (w * h * 0.02);
 
-  // Measure perimeter color variance to check background consistency
-  let variance = 0;
-  for (const pt of samplePoints) {
-    const idx = (pt.y * w + pt.x) * 4;
-    const diff = Math.sqrt(
-      (data[idx] - bgR) ** 2 +
-      (data[idx + 1] - bgG) ** 2 +
-      (data[idx + 2] - bgB) ** 2
-    );
-    variance += diff;
-  }
-  const avgBgVariance = variance / count;
-
-  // Measure contrast between central craft region and perimeter
-  const centerIdx = (Math.floor(h / 2) * w + Math.floor(w / 2)) * 4;
-  const centerContrast = Math.sqrt(
-    (data[centerIdx] - bgR) ** 2 * 0.3 +
-    (data[centerIdx + 1] - bgG) ** 2 * 0.59 +
-    (data[centerIdx + 2] - bgB) ** 2 * 0.11
-  );
-
-  // If segmentation confidence is poor (low contrast or noisy background),
-  // protect the artisan craft pixels from aggressive removal
-  const isLowConfidence = centerContrast < 22 || avgBgVariance > 55;
-
-  // Create foreground alpha mask
-  // Crafts have distinct textures and colors compared to perimeter backdrop
   const alphaMask = new Uint8ClampedArray(w * h);
-  const tolerance = isLowConfidence ? 28 : 42;
 
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      const idx = (y * w + x) * 4;
-      const r = data[idx];
-      const g = data[idx + 1];
-      const b = data[idx + 2];
+  if (isDedicatedTransparent) {
+    // Use the authentic transparent craft mask provided by the dedicated background removal API
+    for (let i = 0; i < w * h; i++) {
+      alphaMask[i] = data[i * 4 + 3];
+    }
+  } else {
+    // Fallback client-side segmentation when offline or before API response
+    // Sample perimeter corner pixels to estimate background color profile
+    const samplePoints = [
+      { x: 4, y: 4 },
+      { x: w - 5, y: 4 },
+      { x: 4, y: h - 5 },
+      { x: w - 5, y: h - 5 },
+      { x: Math.floor(w / 2), y: 4 },
+      { x: 4, y: Math.floor(h / 2) },
+      { x: w - 5, y: Math.floor(h / 2) },
+    ];
 
-      // Distance from estimated background color
-      const colorDist = Math.sqrt(
-        (r - bgR) ** 2 * 0.3 + (g - bgG) ** 2 * 0.59 + (b - bgB) ** 2 * 0.11
+    let sumR = 0, sumG = 0, sumB = 0, count = 0;
+    for (const pt of samplePoints) {
+      const idx = (pt.y * w + pt.x) * 4;
+      sumR += data[idx];
+      sumG += data[idx + 1];
+      sumB += data[idx + 2];
+      count++;
+    }
+    const bgR = sumR / count;
+    const bgG = sumG / count;
+    const bgB = sumB / count;
+
+    // Measure perimeter color variance to check background consistency
+    let variance = 0;
+    for (const pt of samplePoints) {
+      const idx = (pt.y * w + pt.x) * 4;
+      const diff = Math.sqrt(
+        (data[idx] - bgR) ** 2 +
+        (data[idx + 1] - bgG) ** 2 +
+        (data[idx + 2] - bgB) ** 2
       );
+      variance += diff;
+    }
+    const avgBgVariance = variance / count;
 
-      // Edge proximity boost (center of image is very likely foreground craft)
-      const distFromCenterNorm = Math.sqrt(
-        ((x - w / 2) / (w / 2)) ** 2 + ((y - h / 2) / (h / 2)) ** 2
-      );
+    // Measure contrast between central craft region and perimeter
+    const centerIdx = (Math.floor(h / 2) * w + Math.floor(w / 2)) * 4;
+    const centerContrast = Math.sqrt(
+      (data[centerIdx] - bgR) ** 2 * 0.3 +
+      (data[centerIdx + 1] - bgG) ** 2 * 0.59 +
+      (data[centerIdx + 2] - bgB) ** 2 * 0.11
+    );
 
-      let alpha = 255;
-      if (colorDist < tolerance) {
-        // Smooth thresholding
-        const factor = colorDist / tolerance;
-        alpha = Math.round(factor * 255);
-      } else {
-        alpha = 255;
+    const isLowConfidence = centerContrast < 22 || avgBgVariance > 55;
+    const tolerance = isLowConfidence ? 28 : 42;
+
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const idx = (y * w + x) * 4;
+        const r = data[idx];
+        const g = data[idx + 1];
+        const b = data[idx + 2];
+
+        // Distance from estimated background color
+        const colorDist = Math.sqrt(
+          (r - bgR) ** 2 * 0.3 + (g - bgG) ** 2 * 0.59 + (b - bgB) ** 2 * 0.11
+        );
+
+        // Edge proximity boost (center of image is very likely foreground craft)
+        const distFromCenterNorm = Math.sqrt(
+          ((x - w / 2) / (w / 2)) ** 2 + ((y - h / 2) / (h / 2)) ** 2
+        );
+
+        let alpha = 255;
+        if (colorDist < tolerance) {
+          const factor = colorDist / tolerance;
+          alpha = Math.round(factor * 255);
+        } else {
+          alpha = 255;
+        }
+
+        const preserveThreshold = isLowConfidence ? 0.85 : 0.65;
+        if (distFromCenterNorm < preserveThreshold) {
+          alpha = Math.max(alpha, isLowConfidence ? 255 : 240);
+        }
+
+        alphaMask[y * w + x] = alpha;
       }
-
-      // Strong preservation in the central focus area.
-      // If confidence is low, widen preservation area up to 85% of frame
-      const preserveThreshold = isLowConfidence ? 0.85 : 0.65;
-      if (distFromCenterNorm < preserveThreshold) {
-        alpha = Math.max(alpha, isLowConfidence ? 255 : 240);
-      }
-
-      alphaMask[y * w + x] = alpha;
     }
   }
 
@@ -276,12 +287,13 @@ export async function processStudioImage(
   // If a split ratio is requested (Before/After comparison)
   if (options.splitRatio !== undefined && options.splitRatio >= 0 && options.splitRatio <= 1) {
     const splitX = Math.round(w * options.splitRatio);
+    const beforeImg = options.originalImage ? await loadImage(options.originalImage) : img;
     // Draw original image on the left portion
     outCtx.save();
     outCtx.beginPath();
     outCtx.rect(0, 0, splitX, h);
     outCtx.clip();
-    outCtx.drawImage(img, 0, 0, w, h);
+    outCtx.drawImage(beforeImg, 0, 0, w, h);
     outCtx.restore();
 
     // Draw clean divider line

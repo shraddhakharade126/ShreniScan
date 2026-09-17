@@ -108,7 +108,9 @@ function AddProduct() {
   const [step, setStep] = useState(0);
   const [rawImage, setRawImage] = useState<string>("");
   const [studioImage, setStudioImage] = useState<string>("");
+  const [transparentCutout, setTransparentCutout] = useState<string>("");
   const [isProcessingStudio, setIsProcessingStudio] = useState(false);
+  const [isRemovingBg, setIsRemovingBg] = useState(false);
 
   // Live Camera state
   const [isLiveCameraOpen, setIsLiveCameraOpen] = useState(false);
@@ -230,15 +232,63 @@ function AddProduct() {
     saveDraft(draft);
   }, [step, rawImage, studioImage, studioOptions, voiceText, analysis, price, productTitle, draftId]);
 
-  // Re-run studio engine when image or options change on step 1
+  // Dedicated Background Removal via server API (/api/remove-background)
+  useEffect(() => {
+    if (step === 1 && rawImage && !transparentCutout) {
+      let isCancelled = false;
+      setIsRemovingBg(true);
+
+      const requestBackgroundRemoval = async () => {
+        try {
+          const res = await fetch("/api/remove-background", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ imageBase64: rawImage }),
+          });
+
+          if (!res.ok) {
+            const errJson = await res.json().catch(() => ({}));
+            throw new Error(errJson.error || `Server responded with ${res.status}`);
+          }
+
+          const data = await res.json();
+          if (!isCancelled && data.transparentPng) {
+            setTransparentCutout(data.transparentPng);
+            toast.success("Craft background isolated via dedicated AI provider!");
+          }
+        } catch (err: unknown) {
+          console.warn("Dedicated background removal notice, falling back to local canvas studio engine:", err);
+          // If offline or provider issue, fall back to rawImage with canvas segmentation so user is never blocked
+          if (!isCancelled) {
+            setTransparentCutout(rawImage);
+          }
+        } finally {
+          if (!isCancelled) {
+            setIsRemovingBg(false);
+          }
+        }
+      };
+
+      requestBackgroundRemoval();
+
+      return () => {
+        isCancelled = true;
+      };
+    }
+  }, [step, rawImage, transparentCutout]);
+
+  // Re-run studio engine when image, transparent cut-out, or options change on step 1
   useEffect(() => {
     if (step === 1 && rawImage) {
       let isCancelled = false;
       setIsProcessingStudio(true);
 
-      processStudioImage(rawImage, {
+      const foregroundSource = transparentCutout || rawImage;
+
+      processStudioImage(foregroundSource, {
         ...studioOptions,
         splitRatio: isComparing ? studioOptions.splitRatio : undefined,
+        originalImage: rawImage,
       })
         .then((result) => {
           if (!isCancelled) {
@@ -255,7 +305,7 @@ function AddProduct() {
         isCancelled = true;
       };
     }
-  }, [step, rawImage, studioOptions, isComparing]);
+  }, [step, rawImage, transparentCutout, studioOptions, isComparing]);
 
   // Handle Photo Upload
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -267,6 +317,7 @@ function AddProduct() {
       const base64 = event.target?.result as string;
       if (base64) {
         setRawImage(base64);
+        setTransparentCutout("");
         setStudioImage("");
         setStep(1);
         toast.success("Craft photo loaded successfully!");
@@ -345,6 +396,7 @@ function AddProduct() {
 
     stopLiveCamera();
     setRawImage(dataUrl);
+    setTransparentCutout("");
     setStudioImage("");
     setStep(1);
     toast.success("Craft photo captured!");
@@ -867,6 +919,7 @@ function AddProduct() {
                         const base64 = event.target?.result as string;
                         if (base64) {
                           setRawImage(base64);
+                          setTransparentCutout("");
                           setStudioImage("");
                           setStep(1);
                           toast.success("Craft photo uploaded successfully!");
@@ -942,10 +995,14 @@ function AddProduct() {
 
                 {/* Studio Canvas Preview Box with Before / After slider */}
                 <div className="relative aspect-square w-full overflow-hidden rounded-3xl border border-border bg-card shadow-card">
-                  {isProcessingStudio && (
+                  {(isProcessingStudio || isRemovingBg) && (
                     <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-black/40 text-white backdrop-blur-xs">
                       <Wand2 className="size-8 animate-spin text-amber-300" />
-                      <p className="mt-2 text-xs font-bold">Segmenting Craft Pixels…</p>
+                      <p className="mt-2 text-xs font-bold">
+                        {isRemovingBg
+                          ? "Isolating Background via Dedicated AI…"
+                          : "Rendering Studio Canvas…"}
+                      </p>
                     </div>
                   )}
 
@@ -1702,6 +1759,7 @@ function AddProduct() {
                 setDraftId("draft_" + Date.now());
                 setStep(0);
                 setRawImage(images.vase);
+                setTransparentCutout("");
                 setStudioImage("");
                 setAnalysis(null);
                 setVoiceText("");

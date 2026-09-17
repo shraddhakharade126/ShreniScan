@@ -93,11 +93,10 @@ Extract craft authenticity, natural materials, colors, cultural heritage descrip
   contents.push(textPrompt);
 
   const candidateModels = [
-    "gemini-2.5-flash",
+    "gemini-flash-latest",
+    "gemini-3.1-flash-lite",
     "gemini-3.8-flash",
     "gemini-3.6-flash",
-    "gemini-3.1-flash-lite",
-    "gemini-3.1-pro-preview",
   ];
   let rawText = "";
 
@@ -117,8 +116,9 @@ Extract craft authenticity, natural materials, colors, cultural heritage descrip
         break;
       }
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.warn(`Upstream model ${model} attempt completed:`, msg);
+      console.log(`[Shreni AI] Model ${model} unavailable, trying alternate candidate...`);
+      // Brief backoff before next model to handle transient capacity spikes gracefully
+      await new Promise((resolve) => setTimeout(resolve, 300));
     }
   }
 

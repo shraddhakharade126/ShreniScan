@@ -3,6 +3,7 @@ export default function handler(_req: any, res: any) {
     status: "ok",
     pwa: true,
     gemini: Boolean(process.env.GEMINI_API_KEY),
+    backgroundRemoval: Boolean(process.env.BACKGROUND_REMOVAL_API_KEY),
     platform: "vercel",
   };
 

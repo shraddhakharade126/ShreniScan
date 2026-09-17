@@ -5,6 +5,7 @@ import { defineConfig, type Plugin } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 import analyzeCraftHandler from './api/gemini/analyze-craft';
 import healthHandler from './api/health';
+import removeBackgroundHandler from './api/remove-background';
 
 // Development-only server middleware: delegates requests to the standalone Vercel serverless function.
 // Using apply: 'serve' ensures there is zero production dependency on configureServer().
@@ -16,6 +17,10 @@ function vercelDevServerPlugin(): Plugin {
       server.middlewares.use(async (req, res, next) => {
         if (req.url === '/api/gemini/analyze-craft') {
           return analyzeCraftHandler(req, res);
+        }
+
+        if (req.url === '/api/remove-background') {
+          return removeBackgroundHandler(req, res);
         }
 
         if (req.url === '/api/health') {
