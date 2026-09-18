@@ -8,13 +8,13 @@ import { inr } from "@/lib/kalakart-data";
 export const Route = createFileRoute("/_authenticated/voice")({
   head: () => ({
     meta: [
-      { title: "Voice Command — Speak Your Craft | KalaKart" },
+      { title: "Voice Command — Speak Your Craft | ShreniKart" },
       {
         name: "description",
         content:
-          "Describe your handicraft in Hindi, Marathi, Tamil or any Indian language. KalaKart AI detects the language and writes a professional listing.",
+          "Describe your handicraft in Hindi, Marathi, Tamil or any Indian language. ShreniKart AI detects the language and writes a professional listing.",
       },
-      { property: "og:title", content: "Voice Command — KalaKart" },
+      { property: "og:title", content: "Voice Command — ShreniKart" },
       {
         property: "og:description",
         content: "Speak naturally in your language; AI creates the listing.",

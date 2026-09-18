@@ -18,13 +18,13 @@ import { cn } from "@/lib/utils";
 export const Route = createFileRoute("/_authenticated/profile")({
   head: () => ({
     meta: [
-      { title: "Profile & Settings — KalaKart" },
+      { title: "Profile & Settings — ShreniKart" },
       {
         name: "description",
         content:
           "Manage your artisan profile, choose from 11 Indian languages, and update business and payment information.",
       },
-      { property: "og:title", content: "Profile & Settings — KalaKart" },
+      { property: "og:title", content: "Profile & Settings — ShreniKart" },
       {
         property: "og:description",
         content: "Artisan details, language and payment settings.",

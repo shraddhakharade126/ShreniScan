@@ -8,16 +8,16 @@ import { cn } from "@/lib/utils";
 export const Route = createFileRoute("/_authenticated/orders")({
   head: () => ({
     meta: [
-      { title: "Your Orders — KalaKart" },
+      { title: "Your Orders — ShreniKart" },
       {
         name: "description",
         content:
           "Track every handicraft order: buyer, quantity, price and delivery status in one simple screen.",
       },
-      { property: "og:title", content: "Your Orders — KalaKart" },
+      { property: "og:title", content: "Your Orders — ShreniKart" },
       {
         property: "og:description",
-        content: "Simple order tracking for artisans selling on KalaKart.",
+        content: "Simple order tracking for artisans selling on ShreniKart.",
       },
     ],
   }),

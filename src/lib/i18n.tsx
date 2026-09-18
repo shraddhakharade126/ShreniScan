@@ -18,7 +18,7 @@ export const languageOptions: LanguageOption[] = [
 
 const translations: Record<Lang, Record<string, string>> = {
   en: {
-    brand: "KalaKart Artisans",
+    brand: "ShreniKart Artisans",
     tagline: "Connecting authentic Indian craftspeople directly with genuine patrons nationwide.",
     login: "Log In",
     register: "Register as Artisan",
@@ -60,7 +60,7 @@ const translations: Record<Lang, Record<string, string>> = {
     "2d": "2d",
   },
   hi: {
-    brand: "कलाकार्ट कारीगर",
+    brand: "श्रेणीकार्ट कारीगर",
     tagline: "भारतीय कारीगरों को सीधे देश भर के खरीदारों से जोड़ने वाला मंच।",
     login: "लॉग इन करें",
     register: "कारीगर के रूप में पंजीकरण करें",
@@ -102,7 +102,7 @@ const translations: Record<Lang, Record<string, string>> = {
     "2d": "2d",
   },
   mr: {
-    brand: "कलाकार्ट कारागीर",
+    brand: "श्रेणीकार्ट कारागीर",
     tagline: "भारतीय कारागिरांना थेट देशभरातील ग्राहकांशी जोडणारे व्यासपीठ.",
     login: "लॉग इन करा",
     register: "कारागीर म्हणून नोंदणी करा",

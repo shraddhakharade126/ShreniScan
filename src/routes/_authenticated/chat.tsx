@@ -6,13 +6,13 @@ import { Phone, ScreenHeader } from "@/components/kk/shell";
 export const Route = createFileRoute("/_authenticated/chat")({
   head: () => ({
     meta: [
-      { title: "KalaKart AI — Your Digital Business Assistant" },
+      { title: "ShreniKart AI — Your Digital Business Assistant" },
       {
         name: "description",
         content:
-          "Ask KalaKart AI about product descriptions, pricing, titles, translation and how to reply to buyers.",
+          "Ask ShreniKart AI about product descriptions, pricing, titles, translation and how to reply to buyers.",
       },
-      { property: "og:title", content: "KalaKart AI Assistant" },
+      { property: "og:title", content: "ShreniKart AI Assistant" },
       {
         property: "og:description",
         content: "Pricing, descriptions and selling help for artisans.",
@@ -28,7 +28,7 @@ const seed: Msg[] = [
   {
     id: 1,
     role: "ai",
-    text: "Namaste! I am KalaKart AI. I can write product descriptions, suggest prices, translate your words and help you reply to buyers. What would you like help with today?",
+    text: "Namaste! I am ShreniKart AI. I can write product descriptions, suggest prices, translate your words and help you reply to buyers. What would you like help with today?",
   },
   {
     id: 2,
@@ -91,7 +91,7 @@ function ChatScreen() {
   return (
     <Phone>
       <ScreenHeader
-        title="KalaKart AI"
+        title="ShreniKart AI"
         subtitle="Your digital business assistant"
         right={
           <span className="grid size-10 place-items-center rounded-2xl bg-gradient-warm text-primary-foreground">
@@ -170,7 +170,7 @@ function ChatScreen() {
           <input
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="Ask KalaKart AI…"
+            placeholder="Ask ShreniKart AI…"
             className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
           />
           <button

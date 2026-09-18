@@ -19,13 +19,13 @@ import { toast } from "sonner";
 export const Route = createFileRoute("/_authenticated/dashboard")({
   head: () => ({
     meta: [
-      { title: "KalaKart — Empowering Artisans, Connecting Traditions" },
+      { title: "ShreniKart — Empowering Artisans, Connecting Traditions" },
       {
         name: "description",
         content:
-          "KalaKart turns an artisan's voice or photo into a professional listing with AI descriptions, image enhancement and smart price suggestions.",
+          "ShreniKart turns an artisan's voice or photo into a professional listing with AI descriptions, image enhancement and smart price suggestions.",
       },
-      { property: "og:title", content: "KalaKart — Empowering Artisans" },
+      { property: "og:title", content: "ShreniKart — Empowering Artisans" },
       {
         property: "og:description",
         content:
@@ -74,7 +74,7 @@ function Home() {
       <div className="flex items-start justify-between gap-3 px-5 pt-6">
         <div>
           <p className="font-display text-xl font-semibold tracking-[0.18em] text-primary">
-            KALAKART
+            ShreniKart
           </p>
           <h1 className="mt-1.5 text-[22px] leading-tight font-semibold text-foreground">
             Hello, User! 👋

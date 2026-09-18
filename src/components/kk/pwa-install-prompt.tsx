@@ -92,7 +92,7 @@ export function PwaInstallPrompt() {
           </div>
           <div>
             <p className="text-xs font-bold text-[#78350f]">
-              {installed ? "KalaKart Installed!" : "Install KalaKart App"}
+              {installed ? "ShreniKart Installed!" : "Install ShreniKart App"}
             </p>
             <p className="text-[11px] text-muted-foreground">
               {installed

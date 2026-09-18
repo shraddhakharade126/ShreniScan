@@ -8,13 +8,13 @@ import { cn } from "@/lib/utils";
 export const Route = createFileRoute("/onboarding")({
   head: () => ({
     meta: [
-      { title: "Welcome to KalaKart — Start Selling Your Craft" },
+      { title: "Welcome to ShreniKart — Start Selling Your Craft" },
       {
         name: "description",
         content:
           "Three quick steps: reach a bigger market, speak in your language, and let AI write descriptions, enhance photos and suggest prices.",
       },
-      { property: "og:title", content: "Welcome to KalaKart" },
+      { property: "og:title", content: "Welcome to ShreniKart" },
       {
         property: "og:description",
         content: "Your craft deserves a bigger market.",
@@ -33,7 +33,7 @@ const slides = [
   {
     icon: Mic,
     title: "Speak in Your Language",
-    body: "KalaKart turns your voice into professional product listings.",
+    body: "ShreniKart turns your voice into professional product listings.",
   },
   {
     icon: Sparkles,
@@ -61,7 +61,7 @@ function Onboarding() {
           />
           <div className="absolute inset-0 bg-gradient-hero opacity-70" />
           <p className="absolute top-8 left-6 font-display text-xl font-semibold tracking-[0.2em] text-ivory">
-            KALAKART
+            ShreniKart
           </p>
           <p className="absolute top-16 left-6 text-[11px] text-ivory/70">
             Empowering Artisans, Connecting Traditions

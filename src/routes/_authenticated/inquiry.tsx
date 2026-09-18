@@ -8,16 +8,16 @@ import { inquiries } from "@/lib/kalakart-data";
 export const Route = createFileRoute("/_authenticated/inquiry")({
   head: () => ({
     meta: [
-      { title: "Buyer Inquiries — KalaKart" },
+      { title: "Buyer Inquiries — ShreniKart" },
       {
         name: "description",
         content:
-          "Read buyer questions about your handicrafts and reply instantly, or let KalaKart AI draft a polite reply you can edit.",
+          "Read buyer questions about your handicrafts and reply instantly, or let ShreniKart AI draft a polite reply you can edit.",
       },
-      { property: "og:title", content: "Buyer Inquiries — KalaKart" },
+      { property: "og:title", content: "Buyer Inquiries — ShreniKart" },
       {
         property: "og:description",
-        content: "Answer buyer questions with help from KalaKart AI.",
+        content: "Answer buyer questions with help from ShreniKart AI.",
       },
     ],
   }),
@@ -105,7 +105,7 @@ function InquiryPage() {
                 {thinking ? (
                   <p className="flex items-center gap-2 py-3 text-xs text-muted-foreground">
                     <Sparkles className="size-4 animate-pulse text-primary" />
-                    KalaKart AI is writing a polite reply…
+                    ShreniKart AI is writing a polite reply…
                   </p>
                 ) : (
                   <>

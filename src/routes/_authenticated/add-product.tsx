@@ -53,13 +53,13 @@ import type { CraftAnalysisResponse } from "@/server/gemini";
 export const Route = createFileRoute("/_authenticated/add-product")({
   head: () => ({
     meta: [
-      { title: "Add Product — KalaKart AI Cataloging" },
+      { title: "Add Product — ShreniKart AI Cataloging" },
       {
         name: "description",
         content:
           "Capture your craft, isolate studio backgrounds with canvas processing, generate authentic GI descriptions with Gemini 2.5 Flash, and save offline drafts.",
       },
-      { property: "og:title", content: "Add Product — KalaKart" },
+      { property: "og:title", content: "Add Product — ShreniKart" },
       {
         property: "og:description",
         content: "Photo to professional marketplace listing in four simple steps.",
@@ -618,7 +618,7 @@ function AddProduct() {
       });
 
       setPublished(true);
-      toast.success("Craft published live to KalaKart Bazaar!");
+      toast.success("Craft published live to ShreniKart Bazaar!");
     } catch (err: unknown) {
       console.error("Publishing error:", err);
       const errMsg = err instanceof Error ? err.message : "Failed to publish craft to catalog";
@@ -669,7 +669,7 @@ function AddProduct() {
               Product Published!
             </h1>
             <p className="text-xs text-muted-foreground">
-              “{productTitle}” is now live on your KalaKart storefront at {inr(price)}.
+              “{productTitle}” is now live on your ShreniKart storefront at {inr(price)}.
             </p>
           </div>
 
@@ -943,7 +943,7 @@ function AddProduct() {
             )}
 
             <div className="rounded-2xl border border-amber-200 bg-amber-50/70 p-3 text-xs leading-relaxed text-amber-900">
-              💡 <strong>Artisan Tip:</strong> Place your craft in natural window light. KalaKart Studio isolates authentic craft edges and creates clean catalog backgrounds automatically.
+              💡 <strong>Artisan Tip:</strong> Place your craft in natural window light. ShreniKart Studio isolates authentic craft edges and creates clean catalog backgrounds automatically.
             </div>
           </section>
         )}
