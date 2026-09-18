@@ -9,7 +9,7 @@ import {
 import { useEffect } from "react";
 
 import { Toaster } from "@/components/ui/sonner";
-import appCss from "../styles.css?url";
+import appCss from "../index.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 import { AuthProvider } from "@/lib/auth";
 import { I18nProvider } from "@/lib/i18n";
