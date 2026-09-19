@@ -7,6 +7,7 @@ export interface ProductDraft {
   id: string;
   step: number;
   rawImage: string;
+  originalImage?: string;
   studioImage?: string;
   studioOptions?: StudioOptions;
   voiceNotes?: string;

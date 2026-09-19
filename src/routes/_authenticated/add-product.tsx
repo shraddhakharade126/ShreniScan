@@ -28,6 +28,7 @@ import {
   X,
   Plus,
   Palette,
+  AlertTriangle,
 } from "lucide-react";
 import confetti from "canvas-confetti";
 import { toast } from "sonner";
@@ -48,6 +49,10 @@ import {
   clearCurrentWizardDraft,
   type ProductDraft,
 } from "@/lib/draft-store";
+import {
+  processCapturedImageWithOpenCV,
+  type ProcessedCaptureOutput,
+} from "@/lib/opencv/imageQuality";
 import type { CraftAnalysisResponse } from "@/server/gemini";
 
 export const Route = createFileRoute("/_authenticated/add-product")({
@@ -107,6 +112,9 @@ function AddProduct() {
   const [draftId, setDraftId] = useState<string>(() => "draft_" + Date.now());
   const [step, setStep] = useState(0);
   const [rawImage, setRawImage] = useState<string>("");
+  const [originalImage, setOriginalImage] = useState<string>("");
+  const [qualityResult, setQualityResult] = useState<ProcessedCaptureOutput | null>(null);
+  const [isAnalyzingQuality, setIsAnalyzingQuality] = useState(false);
   const [studioImage, setStudioImage] = useState<string>("");
   const [transparentCutout, setTransparentCutout] = useState<string>("");
   const [isProcessingStudio, setIsProcessingStudio] = useState(false);
@@ -188,6 +196,7 @@ function AddProduct() {
       setDraftId(current.id);
       setStep(current.step);
       setRawImage(current.rawImage);
+      if (current.originalImage) setOriginalImage(current.originalImage);
       if (current.studioImage) setStudioImage(current.studioImage);
       if (current.studioOptions) setStudioOptions(current.studioOptions);
       if (current.voiceNotes) setVoiceText(current.voiceNotes);
@@ -221,6 +230,7 @@ function AddProduct() {
       id: draftId,
       step,
       rawImage,
+      originalImage: originalImage || rawImage,
       studioImage,
       studioOptions,
       voiceNotes: voiceText,
@@ -230,7 +240,7 @@ function AddProduct() {
       title: productTitle || analysis?.title || "Craft Draft",
     };
     saveDraft(draft);
-  }, [step, rawImage, studioImage, studioOptions, voiceText, analysis, price, productTitle, draftId]);
+  }, [step, rawImage, originalImage, studioImage, studioOptions, voiceText, analysis, price, productTitle, draftId]);
 
   // Dedicated Background Removal via server API (/api/remove-background)
   useEffect(() => {
@@ -307,20 +317,40 @@ function AddProduct() {
     }
   }, [step, rawImage, transparentCutout, studioOptions, isComparing]);
 
-  // Handle Photo Upload
+  // Handle Photo Upload with OpenCV.js post-capture quality inspection
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = (event) => {
+    reader.onload = async (event) => {
       const base64 = event.target?.result as string;
       if (base64) {
+        // ALWAYS preserve the unmodified original capture
+        setOriginalImage(base64);
         setRawImage(base64);
         setTransparentCutout("");
         setStudioImage("");
         setStep(1);
+        setIsAnalyzingQuality(true);
         toast.success("Craft photo loaded successfully!");
+
+        // Run OpenCV processing strictly after capture, non-blocking
+        try {
+          const result = await processCapturedImageWithOpenCV(base64);
+          setQualityResult(result);
+          if (result.quality.qualityPassed) {
+            setRawImage(result.processedImage);
+          } else {
+            // Show quality warning feedback to artisan
+            const warningMsg = result.quality.warnings[0] || "Image quality check suggested improvements.";
+            toast.warning(`Scan check: ${warningMsg}`, { duration: 4000 });
+          }
+        } catch (err) {
+          console.warn("OpenCV quality check fallback:", err);
+        } finally {
+          setIsAnalyzingQuality(false);
+        }
       }
     };
     reader.readAsDataURL(file);
@@ -375,7 +405,7 @@ function AddProduct() {
     startLiveCamera(nextFacing);
   };
 
-  const captureLivePhoto = () => {
+  const captureLivePhoto = async () => {
     if (!videoRef.current) return;
     const video = videoRef.current;
     if (!video.videoWidth || !video.videoHeight) return;
@@ -395,11 +425,30 @@ function AddProduct() {
     const dataUrl = canvas.toDataURL("image/jpeg", 0.94);
 
     stopLiveCamera();
+    // ALWAYS preserve the unmodified original capture
+    setOriginalImage(dataUrl);
     setRawImage(dataUrl);
     setTransparentCutout("");
     setStudioImage("");
     setStep(1);
+    setIsAnalyzingQuality(true);
     toast.success("Craft photo captured!");
+
+    // Run OpenCV quality pipeline strictly AFTER capture
+    try {
+      const result = await processCapturedImageWithOpenCV(dataUrl);
+      setQualityResult(result);
+      if (result.quality.qualityPassed) {
+        setRawImage(result.processedImage);
+      } else {
+        const warningMsg = result.quality.warnings[0] || "Photo quality check suggested improvements.";
+        toast.warning(`Scan check: ${warningMsg}`, { duration: 4000 });
+      }
+    } catch (err) {
+      console.warn("OpenCV quality check fallback:", err);
+    } finally {
+      setIsAnalyzingQuality(false);
+    }
   };
 
   // Helper chips addition/removal
@@ -915,14 +964,31 @@ function AddProduct() {
                     const file = e.dataTransfer.files?.[0];
                     if (file) {
                       const reader = new FileReader();
-                      reader.onload = (event) => {
+                      reader.onload = async (event) => {
                         const base64 = event.target?.result as string;
                         if (base64) {
+                          setOriginalImage(base64);
                           setRawImage(base64);
                           setTransparentCutout("");
                           setStudioImage("");
                           setStep(1);
+                          setIsAnalyzingQuality(true);
                           toast.success("Craft photo uploaded successfully!");
+
+                          try {
+                            const result = await processCapturedImageWithOpenCV(base64);
+                            setQualityResult(result);
+                            if (result.quality.qualityPassed) {
+                              setRawImage(result.processedImage);
+                            } else {
+                              const warningMsg = result.quality.warnings[0] || "Quality check suggested improvements.";
+                              toast.warning(`Scan check: ${warningMsg}`, { duration: 4000 });
+                            }
+                          } catch (err) {
+                            console.warn("OpenCV quality check fallback:", err);
+                          } finally {
+                            setIsAnalyzingQuality(false);
+                          }
                         }
                       };
                       reader.readAsDataURL(file);
@@ -1033,6 +1099,52 @@ function AddProduct() {
                 Backdrop: {studioOptions.backdrop.toUpperCase()}
               </div>
             </div>
+
+            {/* OpenCV Quality Verification Banner */}
+            {isAnalyzingQuality && (
+              <div className="flex items-center gap-2 rounded-2xl border border-amber-200/80 bg-amber-50/90 p-3 text-xs text-amber-900 shadow-soft">
+                <Wand2 className="size-4 animate-spin text-[#b45309] shrink-0" />
+                <span>Checking capture clarity, brightness, and sharpness with OpenCV…</span>
+              </div>
+            )}
+
+            {!isAnalyzingQuality && qualityResult && (
+              <div
+                className={cn(
+                  "rounded-2xl border p-3 text-xs shadow-soft transition-all space-y-1.5",
+                  qualityResult.quality.qualityPassed
+                    ? "border-emerald-200 bg-emerald-50/80 text-emerald-900"
+                    : "border-amber-200 bg-amber-50/90 text-amber-950"
+                )}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 font-bold">
+                    {qualityResult.quality.qualityPassed ? (
+                      <>
+                        <ShieldCheck className="size-4 text-emerald-600 shrink-0" />
+                        <span>OpenCV Capture Check: Passed</span>
+                      </>
+                    ) : (
+                      <>
+                        <AlertTriangle className="size-4 text-amber-600 shrink-0" />
+                        <span>OpenCV Capture Notice</span>
+                      </>
+                    )}
+                  </div>
+                  <span className="text-[10px] font-medium opacity-80">
+                    Sharpness: {Math.round(qualityResult.quality.sharpness)} | Brightness: {Math.round(qualityResult.quality.brightness)}
+                  </span>
+                </div>
+
+                {qualityResult.quality.warnings.length > 0 && (
+                  <div className="space-y-0.5 pl-6 text-[11px] text-amber-900 font-medium">
+                    {qualityResult.quality.warnings.map((w: string, idx: number) => (
+                      <p key={idx}>• {w}</p>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Before / After Slider bar if split view is enabled */}
             {isComparing && (
